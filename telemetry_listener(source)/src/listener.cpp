@@ -39,7 +39,7 @@ void callback(const sensor_msgs::NavSatFix::ConstPtr& msg)
     //Total distance in meters (x-direction)
       float dx = fabs(d2 * DLON_D);
 
-  //Calculate angle to rotate base servo by, in radians
+  //Calculate target angle for base servo, in radians
   float horizontal_angle_R = 0;
   if (DLAT_D > 0) {
     if (DLON_D > 0) {
@@ -51,17 +51,19 @@ void callback(const sensor_msgs::NavSatFix::ConstPtr& msg)
   }
   else {
     if (DLON_D > 0) {
-      horizontal_angle_R = -atan(dy / dx);
+      horizontal_angle_R = 2*M_PI - atan(dy / dx);
     }
     else {
        horizontal_angle_R = M_PI + atan(dy / dx);
     }
   }
+  float horizontal_angle_D =  horizontal_angle_R * (180/M_PI); //Convert from radians to degrees
 
   //Calculate euclidean distance between ground station and target
   float E_distance_in_meters = sqrt(pow(dx, 2) + pow(dy, 2));
-  //Calculate angle to rotate tilt servo by, in radians
-  float elevation_angle = atan((Talt - GSalt) / E_distance_in_meters);
+  //Calculate target angle for tilt servo, in radians
+  float elevation_angle_R = atan((Talt - GSalt) / E_distance_in_meters);
+  float elevation_angle_D = elevation_angle_R * (180/M_PI) //Convert from radians to degrees
 }
 
 int main(int argc, char **argv)
