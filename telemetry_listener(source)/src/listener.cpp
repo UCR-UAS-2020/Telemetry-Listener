@@ -1,18 +1,78 @@
 // ROS headers
 #include "ros/ros.h"
 #include "sensor_msgs/NavSatFix.h"
+#include "std_msgs/Float64.h"
 // C library headers
 #include <cmath>
 
-void callback(const sensor_msgs::NavSatFix::ConstPtr& msg)
+class CommunicationHandler
 {
-  ROS_INFO("Latitude: [%f], Longitude: [%f], Altitude: [%f]", msg->latitude, msg->longitude, msg->altitude);
+public:
+  CommunicationHandler()
+  {
+    AnglePub = n_.advertise<std_msgs::Float64>("targetAngle", 1000);
+
+    MavrosSub = n_.subscribe("/mavros/global_position/global", 1000, &CommunicationHandler::MavrosCallback, this);
+
+    GPSSub = n_.subscribe("antennaTrackerGPS", 1000, &CommunicationHandler::GPSCallback, this);
+  }
+
+  void GetAngles(float& horizontal_angle_D, float& elevation_angle_D, const sensor_msgs::NavSatFix::ConstPtr& msg);
+
+  sensor_msgs::NavSatFix lastGPSCoords;
+
+  void MavrosCallback(const sensor_msgs::NavSatFix::ConstPtr& msg)
+  {
+    ROS_INFO("Latitude: [%f], Longitude: [%f], Altitude: [%f]", msg->latitude, msg->longitude, msg->altitude);
+    float horizontal_angle_D;
+    float elevation_angle_D;
+
+    GetAngles(horizontal_angle_D, elevation_angle_D, msg);
+
+    std_msgs::Float64 return_msg;
+    return_msg.data = horizontal_angle_D;
+
+    AnglePub.publish(return_msg);
+  }
+
+  void GPSCallback(const sensor_msgs::NavSatFix::ConstPtr& msg)
+  {
+    ROS_INFO("Got Antenna Tracker GPS coordiinates: Latitude: [%f], Longitude: [%f], Altitude: [%f]", msg->latitude, msg->longitude, msg->altitude);
+    this->lastGPSCoords.latitude = msg->latitude;
+    this->lastGPSCoords.longitude = msg->longitude;
+    this->lastGPSCoords.altitude = msg->altitude;
+  }
+
+private:
+  ros::NodeHandle n_; 
+  ros::Publisher AnglePub;
+  ros::Subscriber MavrosSub;
+  ros::Subscriber GPSSub;
+};
+
+int main(int argc, char **argv)
+{
+  ros::init(argc, argv, "listener");
+
+  CommunicationHandler CH;
+
+  ros::spin();
+
+  return 0;
+}
+
+void CommunicationHandler::GetAngles(float& horizontal_angle_D, float& elevation_angle_D, const sensor_msgs::NavSatFix::ConstPtr& msg) {
   float Tlat_D = msg->latitude; //Target latitude in degrees
   float Tlon_D = msg->longitude; //Target longitude in degrees
   float Talt = msg->altitude; //Target altitude
-  float GSlat_D = 33.975644;  //temporary values until we can connect with a sensor
-  float GSlon_D = -117.325958;
+  float GSlat_D = -35.363262;  //Coordinates of home point in SITL simulator
+  float GSlon_D = 149.165237;
   float GSalt = 0.0;
+  /*                  ***Use this once there is something to subscribe to
+  float GSlat_D = this->lastGPSCoords.latitude;
+  float GSlon_D = this->lastGPSCoords.longitude;
+  float GSalt = this->lastGPSCoords.altitude;
+  */
   float Tlat_R = Tlat_D*(M_PI/180); //Target latitude in radians
   float Tlon_R = Tlon_D*(M_PI/180); //Target longitude in radians
   float GSlat_R = GSlat_D*(M_PI/180); //Ground station latitude in radians
@@ -57,24 +117,11 @@ void callback(const sensor_msgs::NavSatFix::ConstPtr& msg)
        horizontal_angle_R = M_PI + atan(dy / dx);
     }
   }
-  float horizontal_angle_D =  horizontal_angle_R * (180/M_PI); //Convert from radians to degrees
+  horizontal_angle_D = horizontal_angle_R * (180/M_PI); //Convert from radians to degrees
 
   //Calculate euclidean distance between ground station and target
   float E_distance_in_meters = sqrt(pow(dx, 2) + pow(dy, 2));
   //Calculate target angle for tilt servo, in radians
   float elevation_angle_R = atan((Talt - GSalt) / E_distance_in_meters);
-  float elevation_angle_D = elevation_angle_R * (180/M_PI) //Convert from radians to degrees
-}
-
-int main(int argc, char **argv)
-{
-  ros::init(argc, argv, "listener");
-
-  ros::NodeHandle n;
-
-  ros::Subscriber sub = n.subscribe("/mavros/global_position/global", 1000, callback);
-
-  ros::spin();
-
-  return 0;
+  elevation_angle_D = elevation_angle_R * (180/M_PI); //Convert from radians to degrees
 }
