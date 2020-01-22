@@ -1,0 +1,25 @@
+/* This code is in development */
+#include "ros.h"
+#include <sensor_msgs/NavSatFix.h>
+#include <std_msgs/String.h>
+
+std_msgs::String str_msg;
+char response[14] = "Recieved info";
+
+ros::NodeHandle  nh;
+ros::Publisher chatter("chatter", &str_msg);
+void messageCb(const sensor_msgs::NavSatFix& msg){
+  chatter.publish(&str_msg);
+}
+ros::Subscriber<sensor_msgs::NavSatFix> sub("/mavros/global_position/global", messageCb );
+
+void setup() {
+  nh.initNode();
+  nh.advertise(chatter);
+  nh.subscribe(sub);
+}
+void loop() {
+  str_msg.data = response;
+  nh.spinOnce();
+  delay(5);
+} 
