@@ -2,24 +2,112 @@
 #include "ros.h"
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/String.h>
+#include <std_msgs/Float64.h>
+#include <stdio.h>
+#include <math.h>
+
+void GetAngles(float& horizontal_angle_D, float& elevation_angle_D, const sensor_msgs::NavSatFix& msg);
 
 std_msgs::String str_msg;
-char response[14] = "Recieved info";
+char latBuf[200];
+char *ptr = latBuf;
 
-ros::NodeHandle  nh;
-ros::Publisher chatter("chatter", &str_msg);
+std_msgs::Float64 angle_msg;
+
+float l;
+
+ros::NodeHandle nh;
+//ros::Publisher chatter("chatter", &str_msg);
+ros::Publisher AnglePub("Angles", &angle_msg);
 void messageCb(const sensor_msgs::NavSatFix& msg){
-  chatter.publish(&str_msg);
+
+  l = msg.latitude;
+  char result[12];
+  dtostrf(l, 8, 4, result);
+  sprintf(ptr,"Latitude: %s \n,",result);
+  //nh.loginfo(ptr);
+  nh.loginfo("messageCb called");
+  
+  str_msg.data = "Got data";
+  //chatter.publish(&str_msg);
+  //delay(100);
+  float horizontal_angle_D = 0;
+  float elevation_angle_D = 0;
+  GetAngles(horizontal_angle_D, elevation_angle_D, msg);
+  angle_msg.data = horizontal_angle_D;
+  AnglePub.publish(&angle_msg);
 }
-ros::Subscriber<sensor_msgs::NavSatFix> sub("/mavros/global_position/global", messageCb );
+ros::Subscriber<sensor_msgs::NavSatFix> sub("/mavros/global_position/global", messageCb);
 
 void setup() {
+  nh.getHardware()->setBaud(57600); // Set baud rate before initialization
   nh.initNode();
-  nh.advertise(chatter);
+  //nh.advertise(chatter);
+  nh.advertise(AnglePub);
   nh.subscribe(sub);
 }
 void loop() {
-  str_msg.data = response;
+  //nh.loginfo("node is online");
   nh.spinOnce();
-  delay(5);
+  delay(100);
 } 
+
+void GetAngles(float& horizontal_angle_D, float& elevation_angle_D, const sensor_msgs::NavSatFix& msg) {
+  float Tlat_D = msg.latitude; //Target latitude in degrees
+  float Tlon_D = msg.longitude; //Target longitude in degrees
+  float Talt = msg.altitude; //Target altitude
+  float GSlat_D = -35.363262;  //Coordinates of home point in SITL simulator
+  float GSlon_D = 149.165237;
+  float GSalt = 0.0;
+  
+  float Tlat_R = Tlat_D*(M_PI/180); //Target latitude in radians
+  float Tlon_R = Tlon_D*(M_PI/180); //Target longitude in radians
+  float GSlat_R = GSlat_D*(M_PI/180); //Ground station latitude in radians
+  float GSlon_R = GSlon_D*(M_PI/180); //Ground station longitude in radians
+  float DLAT_D = Tlat_D - GSlat_D;  //Difference in latitude between target and ground station (Degrees)
+  float DLON_D = Tlon_D - GSlon_D;  //Difference in laongitude between target and ground station (Degrees)
+  float DLAT_R = Tlat_R - GSlat_R;  //Difference in latitude between target and ground station (Radians)
+  float DLON_R = Tlon_R - GSlon_R;  //Difference in longitude between target and ground station (Radians)
+  // Convert separation in lat/lon from degrees to meters
+    //Average of latitudes (used as reference latitude for converting decimal degrees to distance in meters)
+      float lat_ave = (Tlat_R + GSlat_R)/2.0;
+    //Parameters for the shape of the Earth, in meters
+      float a = 6378137; //Equatorial radius
+      float e = 0.0818192; //eccentricity
+    //Calculate distance in meters for 1 degree of latitude at this location (use chord length instead of arc length?)
+      //Arc distance for 1 degree in meters
+        float d1 = (M_PI * a * (1 - pow(e,2))) / (180 * pow((1-(pow(e,2)*pow(sin(lat_ave),2))),3/2));
+    //Total distance in meters (y-direction)
+      float dy = fabs(d1 * DLAT_D);
+    //Calculate distance in meters for 1 degree of longitude at this location
+      //Arc distance for 1 degree in meters
+        float d2 = (M_PI * a * cos(lat_ave)) / (180 * sqrt(1 - (pow(e,2) * pow(sin(lat_ave),2))));
+    //Total distance in meters (x-direction)
+      float dx = fabs(d2 * DLON_D);
+
+  //Calculate target angle for base servo, in radians
+  float horizontal_angle_R = 0;
+  if (DLAT_D > 0) {
+    if (DLON_D > 0) {
+      horizontal_angle_R = atan(dy / dx);
+    }
+    else {
+       horizontal_angle_R = M_PI - atan(dy / dx);
+    }
+  }
+  else {
+    if (DLON_D > 0) {
+      horizontal_angle_R = 2*M_PI - atan(dy / dx);
+    }
+    else {
+       horizontal_angle_R = M_PI + atan(dy / dx);
+    }
+  }
+  //horizontal_angle_D = horizontal_angle_R * (180/M_PI); //Convert from radians to degrees
+
+  //Calculate euclidean distance between ground station and target
+  float E_distance_in_meters = sqrt(pow(dx, 2) + pow(dy, 2));
+  //Calculate target angle for tilt servo, in radians
+  float elevation_angle_R = atan((Talt - GSalt) / E_distance_in_meters);
+  //elevation_angle_D = elevation_angle_R * (180/M_PI); //Convert from radians to degrees
+}
