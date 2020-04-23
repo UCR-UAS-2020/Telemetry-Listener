@@ -3,7 +3,7 @@
  *   tracker.
  */
 #include "math.h"
-const byte buffSize = 40;
+const byte buffSize = 40; // Defines the maximum length of a message that can be recieved 
 char inputBuffer[buffSize];
 const char startMarker = '(';
 const char endMarker = ')';
@@ -13,7 +13,6 @@ boolean newDataFromPC = false;
 
 char messageFromPC[buffSize] = {0};
 
-unsigned long curMillis;
 // Store the gps coordinates as floats before calculating angles
 float lat = 0;
 float lon = 0;
@@ -33,9 +32,8 @@ void setup() {
 //=============
 
 void loop() {
-  //curMillis = millis();
-  getDataFromPC();
-  replyToPC();
+  GetData();
+  BlinkToAck();
   UpdateTargetAngles();
 }
 
@@ -43,7 +41,7 @@ void loop() {
 
 // Recieves data on the serial line that is enclosed in parentheses, and stores it
 // in inputBuffer
-void getDataFromPC() {
+void GetData() {
   if(Serial.available() > 0) {
 
     char x = Serial.read();
@@ -86,18 +84,16 @@ void parseData() {
 //=============
 // Blink the built-in LED to show that messages are being recieved
 unsigned char ledState = LOW;
-void replyToPC() {
+void BlinkToAck() {
   if (newDataFromPC) {
     newDataFromPC = false;
-    if ((lat > 0) && (lon > 0) && (alt > 0)) {
-      if (ledState == LOW) {
-        ledState = HIGH;
-      }
-      else {
-        ledState = LOW;
-      }
-      digitalWrite(13,ledState);
+    if (ledState == LOW) {
+      ledState = HIGH;
     }
+    else {
+      ledState = LOW;
+    }
+    digitalWrite(13,ledState);
   }
 }
 

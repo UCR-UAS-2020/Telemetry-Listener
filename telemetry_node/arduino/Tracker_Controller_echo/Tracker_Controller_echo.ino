@@ -1,7 +1,7 @@
 /*  Recieves a string containing a set of coordinates in the format (<Latitude>,<Longitude>,<Altitude>),
  *   then parses the string and reconstructs it to echo it back (meant for testing purposes)
  */
-const byte buffSize = 40;
+const byte buffSize = 40; // Defines the maximum length of a message that can be recieved 
 char inputBuffer[buffSize];
 const char startMarker = '(';
 const char endMarker = ')';
@@ -11,7 +11,6 @@ boolean newDataFromPC = false;
 
 char messageFromPC[buffSize] = {0};
 
-unsigned long curMillis;
 // Store the gps coordinates as (floats/long longs) before calculating angles
 float lat = 0;
 float lon = 0;
