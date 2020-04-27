@@ -1,78 +1,111 @@
-// ROS headers
-#include "ros/ros.h"
-#include "sensor_msgs/NavSatFix.h"
-#include "std_msgs/Float64.h"
-// C library headers
-#include <cmath>
+/*  Recieves a string containing a set of coordinates in the format (<Latitude>,<Longitude>,<Altitude>),
+ *   then parses the string and updates a pair of angles that determine the pitch and yaw of the antenna
+ *   tracker.
+ */
+#include "math.h"
+const byte buffSize = 40; // Defines the maximum length of a message that can be recieved 
+char inputBuffer[buffSize];
+const char startMarker = '(';
+const char endMarker = ')';
+byte bytesRecvd = 0;
+boolean readInProgress = false;
+boolean newDataFromPC = false;
 
-class CommunicationHandler
-{
-public:
-  CommunicationHandler()
-  {
-    AnglePub = n_.advertise<std_msgs::Float64>("targetAngle", 1000);
+char messageFromPC[buffSize] = {0};
 
-    MavrosSub = n_.subscribe("/mavros/global_position/global", 1000, &CommunicationHandler::MavrosCallback, this);
+// Store the gps coordinates as floats before calculating angles
+float lat = 0;
+float lon = 0;
+float alt = 0;
+// Store the target angles
+float horizontal_angle_D;
+float elevation_angle_D;
+//=============
 
-    GPSSub = n_.subscribe("antennaTrackerGPS", 1000, &CommunicationHandler::GPSCallback, this);
-  }
-
-  void GetAngles(float& horizontal_angle_D, float& elevation_angle_D, const sensor_msgs::NavSatFix::ConstPtr& msg);
-
-  sensor_msgs::NavSatFix lastGPSCoords;
-
-  void MavrosCallback(const sensor_msgs::NavSatFix::ConstPtr& msg)
-  {
-    ROS_INFO("Latitude: [%f], Longitude: [%f], Altitude: [%f]", msg->latitude, msg->longitude, msg->altitude);
-    float horizontal_angle_D;
-    float elevation_angle_D;
-
-    GetAngles(horizontal_angle_D, elevation_angle_D, msg);
-
-    std_msgs::Float64 return_msg;
-    return_msg.data = horizontal_angle_D;
-
-    AnglePub.publish(return_msg);
-  }
-
-  void GPSCallback(const sensor_msgs::NavSatFix::ConstPtr& msg)
-  {
-    ROS_INFO("Got Antenna Tracker GPS coordiinates: Latitude: [%f], Longitude: [%f], Altitude: [%f]", msg->latitude, msg->longitude, msg->altitude);
-    this->lastGPSCoords.latitude = msg->latitude;
-    this->lastGPSCoords.longitude = msg->longitude;
-    this->lastGPSCoords.altitude = msg->altitude;
-  }
-
-private:
-  ros::NodeHandle n_; 
-  ros::Publisher AnglePub;
-  ros::Subscriber MavrosSub;
-  ros::Subscriber GPSSub;
-};
-
-int main(int argc, char **argv)
-{
-  ros::init(argc, argv, "listener");
-
-  CommunicationHandler CH;
-
-  ros::spin();
-
-  return 0;
+void setup() {
+  Serial.begin(9600);
+  //delay(500);
+  pinMode(13,OUTPUT);
+  digitalWrite(13,LOW);
 }
 
-void CommunicationHandler::GetAngles(float& horizontal_angle_D, float& elevation_angle_D, const sensor_msgs::NavSatFix::ConstPtr& msg) {
-  float Tlat_D = msg->latitude; //Target latitude in degrees
-  float Tlon_D = msg->longitude; //Target longitude in degrees
-  float Talt = msg->altitude; //Target altitude
-  float GSlat_D = -35.363262;  //Coordinates of home point in SITL simulator
+//=============
+
+void loop() {
+  GetData();
+  BlinkToAck();
+  UpdateTargetAngles();
+}
+
+//=============
+
+// Recieves data on the serial line that is enclosed in parentheses, and stores it
+// in inputBuffer
+void GetData() {
+  if(Serial.available() > 0) {
+
+    char x = Serial.read();
+      
+    if (x == endMarker) {
+      readInProgress = false;
+      newDataFromPC = true;
+      inputBuffer[bytesRecvd] = 0;
+      parseData();
+    }
+    
+    if(readInProgress) {
+      inputBuffer[bytesRecvd] = x;
+      bytesRecvd ++;
+      if (bytesRecvd == buffSize) {
+        bytesRecvd = buffSize - 1;
+      }
+    }
+
+    if (x == startMarker) {
+      bytesRecvd = 0; 
+      readInProgress = true;
+    }
+  }
+}
+
+//=============
+// Separates the data stored in inputBuffer and stores each value
+void parseData() {
+  // Use the commas to tell where to split the string
+  char * strtokIndx;
+  strtokIndx = strtok(inputBuffer,",");
+  lat = atof(strtokIndx);
+  strtokIndx = strtok(NULL, ",");
+  lon = atof(strtokIndx);
+  strtokIndx = strtok(NULL, ","); 
+  alt = atof(strtokIndx);
+}
+
+//=============
+// Blink the built-in LED to show that messages are being recieved
+unsigned char ledState = LOW;
+void BlinkToAck() {
+  if (newDataFromPC) {
+    newDataFromPC = false;
+    if (ledState == LOW) {
+      ledState = HIGH;
+    }
+    else {
+      ledState = LOW;
+    }
+    digitalWrite(13,ledState);
+  }
+}
+
+//============
+void UpdateTargetAngles() {
+  float Tlat_D = lat; //Target latitude in degrees
+  float Tlon_D = lon; //Target longitude in degrees
+  float Talt = alt; //Target altitude
+  float GSlat_D = -35.363262;  //Coordinates of home point in SITL simulator, change later
   float GSlon_D = 149.165237;
   float GSalt = 0.0;
-  /*                  ***Use this once there is something to subscribe to
-  float GSlat_D = this->lastGPSCoords.latitude;
-  float GSlon_D = this->lastGPSCoords.longitude;
-  float GSalt = this->lastGPSCoords.altitude;
-  */
+  
   float Tlat_R = Tlat_D*(M_PI/180); //Target latitude in radians
   float Tlon_R = Tlon_D*(M_PI/180); //Target longitude in radians
   float GSlat_R = GSlat_D*(M_PI/180); //Ground station latitude in radians
