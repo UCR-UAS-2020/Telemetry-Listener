@@ -153,6 +153,8 @@ void UpdateTargetAngles() {
   horizontal_angle_D = horizontal_angle_R * (180/M_PI); //Convert from radians to degrees
 
   //Calculate euclidean distance between ground station and target
+  // Note: in the documentation, this is referred to as the "projected distance", and the
+  // distance in 3 dimensions is referred to as the euclidean distance
   float E_distance_in_meters = sqrt(pow(dx, 2) + pow(dy, 2));
   //Calculate target angle for tilt servo, in radians
   float elevation_angle_R = atan((Talt - GSalt) / E_distance_in_meters);
